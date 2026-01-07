@@ -31,16 +31,18 @@ def check_auth(email, password, df):
     user_record = df[(df['Email'] == email) & (df['Password_Hash'] == hashed)]
     return not user_record.empty
 
-# --- HIDE STREAMLIT BRANDING & GITHUB ICONS ---
+# --- HIDE ALL PLATFORM BRANDING & WIDGETS ---
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             header {visibility: hidden;}
             .stAppDeployButton {display:none;}
+            /* This targets the status/manage widget in the bottom right */
+            [data-testid="stStatusWidget"] {display:none;}
+            .viewerBadge_container__1QSob {display:none !important;}
             </style>
             """
-# Note the change to 'unsafe_allow_html' below
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- MISSION CONTROL INITIALIZATION ---
