@@ -211,6 +211,12 @@ with st.sidebar:
             st.session_state.authenticated = False
             st.rerun()
 
+# Push the footer to the bottom
+    st.markdown("---")
+    st.caption("© 2026 ProjectAIML. All rights reserved.")
+    st.caption("Mission Control v1.0.4")
+
+    
 # --- MAIN LAUNCHPAD INTERFACE ---
 if st.session_state.authenticated:
     st.title("🚀 ProjectAIML Launchpad")
