@@ -20,41 +20,52 @@ def get_data(worksheet_name):
                 df[col] = df[col].astype(bool)
     return df
 
-
 def handle_authentication():
-    # 1. Look at the URL for a token
+    # 1. Look for the token in the URL
     query_params = st.query_params
     url_token = query_params.get("pilot_token", "").lower()
 
-    # 2. THE SWITCHER: If URL exists AND it's different from the current session
-    if url_token and st.session_state.get('user_email') != url_token:
-        # Clear out the old user's data immediately
+    # 2. TRIGGER: We should log in if:
+    #    a) We aren't logged in yet OR 
+    #    b) The person in the URL is DIFFERENT from the person in memory
+    needs_login = False
+    if url_token:
+        if not st.session_state.get('authenticated') or st.session_state.get('user_email') != url_token:
+            needs_login = True
+
+    if needs_login:
+        # Clear old data to be safe
         st.session_state.authenticated = False
-        st.session_state.user_email = None
-        st.session_state.user_name = None
-        st.session_state.user_clearance = None
         
-        # Now, try to log in the NEW user from the URL
-        registry = get_data("User_Registry") 
-        user_match = registry[registry['Email'].str.lower() == url_token]
-        
-        if not user_match.empty:
-            st.session_state.authenticated = True
-            st.session_state.user_email = url_token
-            st.session_state.user_name = user_match.iloc[0]['Full_Name']
-            st.session_state.user_clearance = user_match.iloc[0]['Clearance']
-            # Optional: Clear the query params to keep the URL clean
-            # st.query_params.clear() 
-            return True
+        # Connect to Google Sheet to verify this user
+        try:
+            registry = get_data("User_Registry") 
+            # Filter the sheet for the email in the URL
+            user_match = registry[registry['Email'].str.lower() == url_token]
+            
+            if not user_match.empty:
+                # SUCCESS: Found the user in your Google Sheet!
+                st.session_state.authenticated = True
+                st.session_state.user_email = url_token
+                st.session_state.user_name = user_match.iloc[0]['Full_Name']
+                st.session_state.user_clearance = user_match.iloc[0]['Clearance']
+                
+                # Clean the URL so the email isn't sitting there forever
+                st.query_params.clear() 
+                return True
+            else:
+                st.error(f"User {url_token} not found in Pilot Registry.")
+                return False
+        except Exception as e:
+            st.error("Connection to Registry failed. Check your Google Sheet settings.")
+            return False
 
-    # 3. If no new URL token, just keep the current session alive
-    if st.session_state.get('authenticated'):
-        return True
-    
-    return False
+    # 3. If no URL token, just rely on existing session
+    return st.session_state.get('authenticated', False)
 
-# Run the check at the start of your script
+# --- EXECUTION ---
 is_logged_in = handle_authentication()
+
 # --- MISSION CONTROL INITIALIZATION ---
 st.set_page_config(page_title="ProjectAIML Launchpad", page_icon="🚀", layout="wide")
 
