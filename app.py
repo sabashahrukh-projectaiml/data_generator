@@ -21,17 +21,20 @@ def get_data(worksheet_name):
     return df
 
 
-# --- THE AUTO-LOGIN GATEKEEPER ---
 def handle_authentication():
+    # 1. Look at the URL for a token
     query_params = st.query_params
     url_token = query_params.get("pilot_token", "").lower()
 
-    # 1. FORCE SWITCH: If URL token exists and doesn't match current session
+    # 2. THE SWITCHER: If URL exists AND it's different from the current session
     if url_token and st.session_state.get('user_email') != url_token:
-        # Clear the old session entirely
+        # Clear out the old user's data immediately
         st.session_state.authenticated = False
         st.session_state.user_email = None
-        # Now proceed to log in the NEW user from the URL
+        st.session_state.user_name = None
+        st.session_state.user_clearance = None
+        
+        # Now, try to log in the NEW user from the URL
         registry = get_data("User_Registry") 
         user_match = registry[registry['Email'].str.lower() == url_token]
         
@@ -40,48 +43,18 @@ def handle_authentication():
             st.session_state.user_email = url_token
             st.session_state.user_name = user_match.iloc[0]['Full_Name']
             st.session_state.user_clearance = user_match.iloc[0]['Clearance']
-            # Update Local Storage so the switch is permanent
-            # localS.setItem("projectaiml_user", url_token) 
+            # Optional: Clear the query params to keep the URL clean
+            # st.query_params.clear() 
             return True
 
-    # 1. Check if user is already in session
+    # 3. If no new URL token, just keep the current session alive
     if st.session_state.get('authenticated'):
         return True
-
-    # 2. Check for Token in URL (Coming from WordPress)
-    query_params = st.query_params
-    if "pilot_token" in query_params:
-        email_token = query_params["pilot_token"].lower()
-        
-        # Verify user exists in your Google Sheet Registry
-        registry = get_data("User_Registry") # Use your function name
-        user_match = registry[registry['Email'].str.lower() == email_token]
-        
-        if not user_match.empty:
-            st.session_state.authenticated = True
-            st.session_state.user_email = email_token
-            st.session_state.user_name = user_match.iloc[0]['Full_Name']
-            st.session_state.user_clearance = user_match.iloc[0]['Clearance']
-            # Save to browser storage so refresh doesn't log them out
-            localS.setItem("projectaiml_user", email_token)
-            st.query_params.clear() # Clean the URL
-            return True
-
-    # 3. Check Local Storage (For Refreshes)
-    saved_user = localS.getItem("projectaiml_user")
-    if saved_user:
-        # Re-verify against registry for security
-        registry = get_data("User_Registry")
-        if saved_user in registry['Email'].values:
-            st.session_state.authenticated = True
-            st.session_state.user_email = saved_user
-            return True
-
+    
     return False
 
-# Run the check
+# Run the check at the start of your script
 is_logged_in = handle_authentication()
-
 # --- MISSION CONTROL INITIALIZATION ---
 st.set_page_config(page_title="ProjectAIML Launchpad", page_icon="🚀", layout="wide")
 
