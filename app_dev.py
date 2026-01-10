@@ -11,7 +11,7 @@ localS = LocalStorage()
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data(worksheet_name):
-    df = conn.read(worksheet=worksheet_name)
+    df = conn.read(worksheet=worksheet_name, ttl=0)
     
     # If this is the progress sheet, fix the types immediately
     if worksheet_name == "Node_Analytics":
@@ -41,7 +41,7 @@ def handle_authentication():
         try:
             registry = get_data("User_Registry") 
             # Filter the sheet for the email in the URL
-            user_match = registry[registry['Email'].str.lower() == url_token]
+            user_match = registry[registry['Email'].str.lower().str.strip() == url_token.strip()]
             
             if not user_match.empty:
                 # SUCCESS: Found the user in your Google Sheet!
