@@ -40,6 +40,7 @@ def handle_authentication():
             st.session_state.authenticated = True
             st.session_state.user_email = email_token
             st.session_state.user_name = user_match.iloc[0]['Full_Name']
+            st.session_state.user_clearance = user_match.iloc[0]['Clearance']
             # Save to browser storage so refresh doesn't log them out
             localS.setItem("projectaiml_user", email_token)
             st.query_params.clear() # Clean the URL
@@ -340,11 +341,12 @@ else:
     # 2. RENDER THE QUANTUM HERO (Step 4)
     user_name = st.session_state.get('user_name', 'Pilot')
     user_email = st.session_state.get('user_email', 'unknown')
+    user_lvl = st.session_state.get('user_clearance', '1')
 
     st.markdown(f"""
     <div style="background: linear-gradient(90deg, #0176D3 0%, #00A1E0 100%); padding: 40px; border-radius: 20px; color: white; margin-bottom: 20px;">
         <h1 style="margin:0;">Welcome Back, {user_name}</h1>
-        <p style="opacity:0.9;">Status: <b>Level {st.session_state.user_clearance} Cadet</b> | Secure Connection: {user_email}</p>
+        <p style="opacity:0.9;">Status: <b>Level {user_lvl} Cadet</b> | Secure Connection: {user_email}</p>
     </div>
     """, unsafe_allow_html=True)
     
