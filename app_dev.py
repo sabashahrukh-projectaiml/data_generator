@@ -23,6 +23,27 @@ def get_data(worksheet_name):
 
 # --- THE AUTO-LOGIN GATEKEEPER ---
 def handle_authentication():
+    query_params = st.query_params
+    url_token = query_params.get("pilot_token", "").lower()
+
+    # 1. FORCE SWITCH: If URL token exists and doesn't match current session
+    if url_token and st.session_state.get('user_email') != url_token:
+        # Clear the old session entirely
+        st.session_state.authenticated = False
+        st.session_state.user_email = None
+        # Now proceed to log in the NEW user from the URL
+        registry = get_data("User_Registry") 
+        user_match = registry[registry['Email'].str.lower() == url_token]
+        
+        if not user_match.empty:
+            st.session_state.authenticated = True
+            st.session_state.user_email = url_token
+            st.session_state.user_name = user_match.iloc[0]['Full_Name']
+            st.session_state.user_clearance = user_match.iloc[0]['Clearance']
+            # Update Local Storage so the switch is permanent
+            # localS.setItem("projectaiml_user", url_token) 
+            return True
+
     # 1. Check if user is already in session
     if st.session_state.get('authenticated'):
         return True
