@@ -7,6 +7,17 @@ from streamlit_local_storage import LocalStorage
 # Initialize Local Storage
 localS = LocalStorage()
 
+def get_data(worksheet_name):
+    df = conn.read(worksheet=worksheet_name)
+    
+    # If this is the progress sheet, fix the types immediately
+    if worksheet_name == "Node_Analytics":
+        for col in ['Blog_Read', 'Code_Done', 'Quiz_Done']:
+            if col in df.columns:
+                df[col] = df[col].astype(bool)
+    return df
+
+
 # --- THE AUTO-LOGIN GATEKEEPER ---
 def handle_authentication():
     # 1. Check if user is already in session
@@ -60,15 +71,6 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 # This function saves your "Quota" by remembering the data
 @st.cache_data(ttl=300)
-def get_data(worksheet_name):
-    df = conn.read(worksheet=worksheet_name)
-    
-    # If this is the progress sheet, fix the types immediately
-    if worksheet_name == "Node_Analytics":
-        for col in ['Blog_Read', 'Code_Done', 'Quiz_Done']:
-            if col in df.columns:
-                df[col] = df[col].astype(bool)
-    return df
 
 # --- ARCHITECT'S UTILITIES ---
 def hash_password(password):
