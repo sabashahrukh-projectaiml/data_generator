@@ -2,6 +2,49 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 import hashlib
+from streamlit_local_storage import LocalStorage
+
+# Initialize Local Storage
+localS = LocalStorage()
+
+# --- THE AUTO-LOGIN GATEKEEPER ---
+def handle_authentication():
+    # 1. Check if user is already in session
+    if st.session_state.get('authenticated'):
+        return True
+
+    # 2. Check for Token in URL (Coming from WordPress)
+    query_params = st.query_params
+    if "pilot_token" in query_params:
+        email_token = query_params["pilot_token"].lower()
+        
+        # Verify user exists in your Google Sheet Registry
+        registry = get_data("User_Registry") # Use your function name
+        user_match = registry[registry['Email'].str.lower() == email_token]
+        
+        if not user_match.empty:
+            st.session_state.authenticated = True
+            st.session_state.user_email = email_token
+            st.session_state.user_name = user_match.iloc[0]['Full_Name']
+            # Save to browser storage so refresh doesn't log them out
+            localS.setItem("projectaiml_user", email_token)
+            st.query_params.clear() # Clean the URL
+            return True
+
+    # 3. Check Local Storage (For Refreshes)
+    saved_user = localS.getItem("projectaiml_user")
+    if saved_user:
+        # Re-verify against registry for security
+        registry = get_data("User_Registry")
+        if saved_user in registry['Email'].values:
+            st.session_state.authenticated = True
+            st.session_state.user_email = saved_user
+            return True
+
+    return False
+
+# Run the check
+is_logged_in = handle_authentication()
 
 # --- MISSION CONTROL INITIALIZATION ---
 st.set_page_config(page_title="ProjectAIML Launchpad", page_icon="🚀", layout="wide")
