@@ -7,6 +7,9 @@ from streamlit_local_storage import LocalStorage
 # Initialize Local Storage
 localS = LocalStorage()
 
+# --- DATABASE CONNECTION ---
+conn = st.connection("gsheets", type=GSheetsConnection)
+
 def get_data(worksheet_name):
     df = conn.read(worksheet=worksheet_name)
     
@@ -65,9 +68,6 @@ if 'authenticated' not in st.session_state:
     st.session_state.user_email = ""
     st.session_state.user_name = ""
     st.session_state.user_clearance = 1
-
-# --- DATABASE CONNECTION ---
-conn = st.connection("gsheets", type=GSheetsConnection)
 
 # This function saves your "Quota" by remembering the data
 @st.cache_data(ttl=300)
