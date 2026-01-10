@@ -240,6 +240,28 @@ def render_dynamic_navigator(email):
 
 # --- MAIN APP LOGIC ---
 
+# 1. Check for the URL Token first
+if not st.session_state.authenticated:
+    query_params = st.query_params
+    if "pilot_token" in query_params:
+        # Get the email from the URL (?pilot_token=email@example.com)
+        email_from_url = query_params["pilot_token"].lower()
+        
+        # Look up this email in your Google Sheet Registry
+        # (Assuming your get_data function is working)
+        registry = get_data("User_Registry") 
+        user_match = registry[registry['Email'].str.lower() == email_from_url]
+        
+        if not user_match.empty:
+            # SUCCESS: Log them in automatically
+            st.session_state.authenticated = True
+            st.session_state.user_email = email_from_url
+            st.session_state.user_name = user_match.iloc[0]['Full_Name']
+            
+            # Optional: Clean the URL so the token isn't visible
+            st.query_params.clear() 
+            st.rerun()
+
 if not st.session_state.authenticated:
     # Auth page layout
     col1, col2, col3 = st.columns([1, 1.5, 1])
