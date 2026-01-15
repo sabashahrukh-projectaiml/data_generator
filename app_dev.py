@@ -289,6 +289,8 @@ if target_mission:
     if not st.session_state.authenticated:
         st.info("👋 Log in to your Launchpad to track progress.")
     st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
+    # THIS IS THE KEY: Stop everything else so the login screen doesn't show!
+    st.stop()
 
 elif not st.session_state.authenticated:
     # --- AUTHENTICATION MODE ---
