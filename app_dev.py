@@ -272,53 +272,45 @@ def render_dynamic_navigator(email):
 
 # --- MAIN APP LOGIC ---
 
-# 1. First, check for Auto-Login from URL (Updates session_state if pilot_token is present)
-is_logged_in = handle_authentication()
+# 1. Silently check for login from URL
+handle_authentication()
 
-# 2. Extract context from URL
-query_params = st.query_params
-target_mission = query_params.get("mission_id")
+# 2. Check for Mission Context
+target_mission = st.query_params.get("mission_id")
 
-# 3. PRIORITY ROUTER: Decide exactly what the user sees
+# 3. ROUTER
 if target_mission:
-    # --- BLOG EMBED MODE ---
-    # This block executes even for guests, preventing the login wall on your blogs
+    # --- BLOG MODE ---
+    # We show this immediately. No login wall. No redirects.
     user_email = st.session_state.get('user_email', None)
     show_lms_roadmap(target_mission, user_email)
     
-    # Simple footer for the embed
     if not st.session_state.authenticated:
-        st.info("👋 Log in via the Launchpad to track your flight progress!")
+        st.info("👋 Log in to your Launchpad to track progress.")
     st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
 
 elif not st.session_state.authenticated:
-    # --- AUTHENTICATION MODE (Your existing Login UI) ---
-    # This only shows if there is NO mission_id and the user isn't logged in
+    # --- AUTHENTICATION MODE ---
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        logo_c, title_c = st.columns([0.2, 1])
-        logo_c.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=60)
-        title_c.title("Pilot Authorization")
+        st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=60)
+        st.title("Pilot Authorization")
         
-        auth_mode = st.radio("Access Level", ["Login", "Register New Pilot"], horizontal=True)
+        auth_mode = st.radio("Access Level", ["Login", "Register"], horizontal=True)
         input_email = st.text_input("Email").strip().lower()
         input_pass = st.text_input("Password", type='password')
         
-        if auth_mode == "Login":
-            if st.button("Authorize Entry", type="primary", use_container_width=True):
-                registry = get_cleaned_registry()
-                user_row = registry[registry['Email'] == input_email]
-                if not user_row.empty and hash_password(input_pass) == user_row.iloc[0]['Password_Hash']:
-                    st.session_state.authenticated = True
-                    st.session_state.user_email = input_email
-                    st.session_state.user_name = user_row.iloc[0]['Full_Name']
-                    st.session_state.user_clearance = user_row.iloc[0]['Clearance']
-                    st.rerun()
-                else:
-                    st.error("Invalid Credentials")
-        else:
-            # Registration logic...
-            pass
+        if st.button("Authorize Entry", type="primary", use_container_width=True):
+            registry = get_cleaned_registry()
+            user_row = registry[registry['Email'] == input_email]
+            if not user_row.empty and hash_password(input_pass) == user_row.iloc[0]['Password_Hash']:
+                st.session_state.authenticated = True
+                st.session_state.user_email = input_email
+                st.session_state.user_name = user_row.iloc[0]['Full_Name']
+                st.session_state.user_clearance = user_row.iloc[0]['Clearance']
+                st.rerun() # This is fine here because it's triggered by a CLICK, not a load
+            else:
+                st.error("Invalid Credentials")
 
 else:
     # --- FULL DASHBOARD VIEW (Your existing logic) ---
