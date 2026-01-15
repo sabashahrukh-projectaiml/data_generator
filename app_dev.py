@@ -271,100 +271,106 @@ def render_dynamic_navigator(email):
                             st.rerun()
 
 # --- MAIN APP LOGIC ---
+# --- MAIN APP LOGIC ---
 
-# 1. Silently check for login from URL
-handle_authentication()
+# 1. Capture Context
+query_params = st.query_params
+target_mission = query_params.get("mission_id")
 
-# 2. Check for Mission Context
-target_mission = st.query_params.get("mission_id")
-
-# 3. ROUTER
+# 2. THE ROUTER
 if target_mission:
-    # --- BLOG MODE ---
-    # We show this immediately. No login wall. No redirects.
-    #user_email = st.session_state.get('user_email', None)
-    user_email = st.query_params.get("pilot_token")
+    # --- BLOG MODE: SHOW ROADMAP AND STOP ---
+    handle_authentication() # Silent check
+    user_email = st.session_state.get('user_email') or query_params.get("pilot_token")
+    
     show_lms_roadmap(target_mission, user_email)
     
     if not st.session_state.authenticated:
-        st.info("👋 Log in to your Launchpad to track progress.")
-    st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
-    # THIS IS THE KEY: Stop everything else so the login screen doesn't show!
-    st.stop()
-
-elif not st.session_state.authenticated:
-    # --- AUTHENTICATION MODE ---
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    with col2:
-        st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=60)
-        st.title("Pilot Authorization")
-        
-        auth_mode = st.radio("Access Level", ["Login", "Register"], horizontal=True)
-        input_email = st.text_input("Email").strip().lower()
-        input_pass = st.text_input("Password", type='password')
-        
-        if st.button("Authorize Entry", type="primary", use_container_width=True):
-            registry = get_cleaned_registry()
-            user_row = registry[registry['Email'] == input_email]
-            if not user_row.empty and hash_password(input_pass) == user_row.iloc[0]['Password_Hash']:
-                st.session_state.authenticated = True
-                st.session_state.user_email = input_email
-                st.session_state.user_name = user_row.iloc[0]['Full_Name']
-                st.session_state.user_clearance = user_row.iloc[0]['Clearance']
-                st.rerun() # This is fine here because it's triggered by a CLICK, not a load
-            else:
-                st.error("Invalid Credentials")
-
-else:
-    # --- FULL DASHBOARD VIEW (Your existing logic) ---
-    # --- GLOBAL CSS INJECTION ---
-    st.markdown("""
-        <style>
-        div[data-testid="stVerticalBlock"] > div:has(button[key*="un_"]) { gap: 0rem !important; }
-        button[key*="un_"] {
-            font-size: 11px !important; padding: 0px !important; height: 20px !important;
-            line-height: 1 !important; color: #ff4b4b !important; border: none !important;
-            background: transparent !important; box-shadow: none !important;
-            margin-top: -15px !important; text-align: left !important; width: auto !important;
-        }
-        button[key*="un_"]:hover { text-decoration: underline !important; color: #ff3333 !important; }
-        button[disabled] {
-            border: 1px solid #28a745 !important; color: #28a745 !important;
-            background-color: rgba(40, 167, 69, 0.05) !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # Fetch Data for Dashboard
-    mission_data = get_data("User_Missions")
-    user_name = st.session_state.get('user_name', 'Pilot')
-    user_email = st.session_state.get('user_email', 'unknown')
-    user_lvl = st.session_state.get('user_clearance', '1')
-
-    st.markdown(f"""
-    <div style="background: linear-gradient(90deg, #0176D3 0%, #00A1E0 100%); padding: 40px; border-radius: 20px; color: white; margin-bottom: 20px;">
-        <h1 style="margin:0;">Welcome Back, {user_name}</h1>
-        <p style="opacity:0.9;">Status: <b>Level {user_lvl} Cadet</b> | Secure Connection: {user_email}</p>
-    </div>
-    """, unsafe_allow_html=True)
+        st.info("👋 Log in to your Launchpad to track flight progress.")
     
-    # Header Area
-    h1, h2, h3 = st.columns([0.1, 1.3, 0.4])
-    with h1: st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=50)
-    with h2: st.title("🚀 ProjectAIML Launchpad")
-    with h3:
-        with st.popover(f"👤 {user_name}"):
-            if st.button("Secure Logout", use_container_width=True):
-                st.session_state.authenticated = False
-                st.rerun()
-
-    # Active Mission Prompt
-    user_state = mission_data[mission_data['Email'] == user_email]
-    if not user_state.empty and user_state['Status'].values[0] == "Active":
-        render_active_mission(user_state)
-    else:
-        st.info("💡 Select a mission from the navigator below to begin your flight plan.")
-
-    st.divider()
-    render_dynamic_navigator(user_email)
     st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
+    
+    # Force the script to finish here
+    st.stop() 
+
+# 3. DASHBOARD MODE: Only runs if target_mission IS NOT present
+else:
+    # Standard Authentication Check
+    handle_authentication()
+
+    if not st.session_state.authenticated:
+        # --- LOGIN PAGE ---
+        col1, col2, col3 = st.columns([1, 1.5, 1])
+        with col2:
+            st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=60)
+            st.title("Pilot Authorization")
+            
+            auth_mode = st.radio("Access Level", ["Login", "Register"], horizontal=True)
+            input_email = st.text_input("Email").strip().lower()
+            input_pass = st.text_input("Password", type='password')
+            
+            if st.button("Authorize Entry", type="primary", use_container_width=True):
+                registry = get_cleaned_registry()
+                user_row = registry[registry['Email'] == input_email]
+                if not user_row.empty and hash_password(input_pass) == user_row.iloc[0]['Password_Hash']:
+                    st.session_state.authenticated = True
+                    st.session_state.user_email = input_email
+                    st.session_state.user_name = user_row.iloc[0]['Full_Name']
+                    st.session_state.user_clearance = user_row.iloc[0]['Clearance']
+                    st.rerun()
+                else:
+                    st.error("Invalid Credentials")
+    
+    else:
+        # --- FULL DASHBOARD VIEW (Your existing logic) ---
+        # --- GLOBAL CSS INJECTION ---
+        st.markdown("""
+            <style>
+            div[data-testid="stVerticalBlock"] > div:has(button[key*="un_"]) { gap: 0rem !important; }
+            button[key*="un_"] {
+                font-size: 11px !important; padding: 0px !important; height: 20px !important;
+                line-height: 1 !important; color: #ff4b4b !important; border: none !important;
+                background: transparent !important; box-shadow: none !important;
+                margin-top: -15px !important; text-align: left !important; width: auto !important;
+            }
+            button[key*="un_"]:hover { text-decoration: underline !important; color: #ff3333 !important; }
+            button[disabled] {
+                border: 1px solid #28a745 !important; color: #28a745 !important;
+                background-color: rgba(40, 167, 69, 0.05) !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # Fetch Data for Dashboard
+        mission_data = get_data("User_Missions")
+        user_name = st.session_state.get('user_name', 'Pilot')
+        user_email = st.session_state.get('user_email', 'unknown')
+        user_lvl = st.session_state.get('user_clearance', '1')
+
+        st.markdown(f"""
+        <div style="background: linear-gradient(90deg, #0176D3 0%, #00A1E0 100%); padding: 40px; border-radius: 20px; color: white; margin-bottom: 20px;">
+            <h1 style="margin:0;">Welcome Back, {user_name}</h1>
+            <p style="opacity:0.9;">Status: <b>Level {user_lvl} Cadet</b> | Secure Connection: {user_email}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Header Area
+        h1, h2, h3 = st.columns([0.1, 1.3, 0.4])
+        with h1: st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=50)
+        with h2: st.title("🚀 ProjectAIML Launchpad")
+        with h3:
+            with st.popover(f"👤 {user_name}"):
+                if st.button("Secure Logout", use_container_width=True):
+                    st.session_state.authenticated = False
+                    st.rerun()
+
+        # Active Mission Prompt
+        user_state = mission_data[mission_data['Email'] == user_email]
+        if not user_state.empty and user_state['Status'].values[0] == "Active":
+            render_active_mission(user_state)
+        else:
+            st.info("💡 Select a mission from the navigator below to begin your flight plan.")
+
+        st.divider()
+        render_dynamic_navigator(user_email)
+        st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
