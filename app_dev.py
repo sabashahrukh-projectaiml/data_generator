@@ -270,29 +270,30 @@ def render_dynamic_navigator(email):
                             update_granular_progress(email, m_id, n_id, "Quiz_Done", True)
                             st.rerun()
 
-
 # --- MAIN APP LOGIC ---
 
-# 1. Handle URL-based Auto-Login (Checks pilot_token)
+# 1. First, check for Auto-Login from URL (Updates session_state if pilot_token is present)
 is_logged_in = handle_authentication()
 
-# 2. Check for Blog Mode (Mission Navigator)
+# 2. Extract context from URL
 query_params = st.query_params
 target_mission = query_params.get("mission_id")
 
-# 3. ROUTER: Decide if we show the Blog Roadmap or the Full Dashboard
+# 3. PRIORITY ROUTER: Decide exactly what the user sees
 if target_mission:
-    # --- BLOG EMBED VIEW ---
-    # We show this first so guests can see the roadmap without being forced to login
-    show_lms_roadmap(target_mission, st.session_state.get('user_email'))
+    # --- BLOG EMBED MODE ---
+    # This block executes even for guests, preventing the login wall on your blogs
+    user_email = st.session_state.get('user_email', None)
+    show_lms_roadmap(target_mission, user_email)
     
+    # Simple footer for the embed
     if not st.session_state.authenticated:
-        st.info("👋 Log in via the Launchpad to track your progress!")
-    
+        st.info("👋 Log in via the Launchpad to track your flight progress!")
     st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
 
 elif not st.session_state.authenticated:
-    # --- AUTHENTICATION PAGE (Your existing Login UI) ---
+    # --- AUTHENTICATION MODE (Your existing Login UI) ---
+    # This only shows if there is NO mission_id and the user isn't logged in
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         logo_c, title_c = st.columns([0.2, 1])
@@ -316,10 +317,9 @@ elif not st.session_state.authenticated:
                 else:
                     st.error("Invalid Credentials")
         else:
-            name = st.text_input("Full Name")
-            if st.button("Initialize Protocol", type="primary", use_container_width=True):
-                # ... [Your Registration logic here] ...
-                pass
+            # Registration logic...
+            pass
+
 else:
     # --- FULL DASHBOARD VIEW (Your existing logic) ---
     # --- GLOBAL CSS INJECTION ---
