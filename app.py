@@ -21,46 +21,32 @@ def get_data(worksheet_name):
     return df
 
 def handle_authentication():
-    # 1. Look for the token in the URL
     query_params = st.query_params
     url_token = query_params.get("pilot_token", "").lower()
-
-    # 2. TRIGGER: We should log in if:
-    #    a) We aren't logged in yet OR 
-    #    b) The person in the URL is DIFFERENT from the person in memory
-    needs_login = False
+    
+    # 1. Check if we need to perform an auto-login from the URL
     if url_token:
+        # Only trigger if not already logged in as this user
         if not st.session_state.get('authenticated') or st.session_state.get('user_email') != url_token:
-            needs_login = True
-
-    if needs_login:
-        # Clear old data to be safe
-        st.session_state.authenticated = False
-        
-        # Connect to Google Sheet to verify this user
-        try:
-            registry = get_data("User_Registry") 
-            # Filter the sheet for the email in the URL
-            user_match = registry[registry['Email'].str.lower().str.strip() == url_token.strip()]
-            
-            if not user_match.empty:
-                # SUCCESS: Found the user in your Google Sheet!
-                st.session_state.authenticated = True
-                st.session_state.user_email = url_token
-                st.session_state.user_name = user_match.iloc[0]['Full_Name']
-                st.session_state.user_clearance = user_match.iloc[0]['Clearance']
+            try:
+                registry = get_data("User_Registry") 
+                user_match = registry[registry['Email'].str.lower().str.strip() == url_token.strip()]
                 
-                # Clean the URL so the email isn't sitting there forever
-                st.query_params.clear() 
-                return True
-            else:
-                st.error(f"User {url_token} not found in Pilot Registry.")
+                if not user_match.empty:
+                    st.session_state.authenticated = True
+                    st.session_state.user_email = url_token
+                    st.session_state.user_name = user_match.iloc[0]['Full_Name']
+                    st.session_state.user_clearance = user_match.iloc[0]['Clearance']
+                    
+                    # IMPORTANT: We keep 'mission_id' if it exists, only clear the token
+                    current_mission = query_params.get("mission_id")
+                    st.query_params.clear() 
+                    if current_mission:
+                        st.query_params["mission_id"] = current_mission
+                    return True
+            except Exception as e:
                 return False
-        except Exception as e:
-            st.error("Connection to Registry failed. Check your Google Sheet settings.")
-            return False
 
-    # 3. If no URL token, just rely on existing session
     return st.session_state.get('authenticated', False)
 
 # --- EXECUTION ---
@@ -287,30 +273,26 @@ def render_dynamic_navigator(email):
 
 # --- MAIN APP LOGIC ---
 
-# 1. Check for the URL Token first
-if not st.session_state.authenticated:
-    query_params = st.query_params
-    if "pilot_token" in query_params:
-        # Get the email from the URL (?pilot_token=email@example.com)
-        email_from_url = query_params["pilot_token"].lower()
-        
-        # Look up this email in your Google Sheet Registry
-        # (Assuming your get_data function is working)
-        registry = get_data("User_Registry") 
-        user_match = registry[registry['Email'].str.lower() == email_from_url]
-        
-        if not user_match.empty:
-            # SUCCESS: Log them in automatically
-            st.session_state.authenticated = True
-            st.session_state.user_email = email_from_url
-            st.session_state.user_name = user_match.iloc[0]['Full_Name']
-            
-            # Optional: Clean the URL so the token isn't visible
-            st.query_params.clear() 
-            st.rerun()
+# 1. Handle URL-based Auto-Login (Checks pilot_token)
+is_logged_in = handle_authentication()
 
-if not st.session_state.authenticated:
-    # Auth page layout
+# 2. Check for Blog Mode (Mission Navigator)
+query_params = st.query_params
+target_mission = query_params.get("mission_id")
+
+# 3. ROUTER: Decide if we show the Blog Roadmap or the Full Dashboard
+if target_mission:
+    # --- BLOG EMBED VIEW ---
+    # We show this first so guests can see the roadmap without being forced to login
+    show_lms_roadmap(target_mission, st.session_state.get('user_email'))
+    
+    if not st.session_state.authenticated:
+        st.info("👋 Log in via the Launchpad to track your progress!")
+    
+    st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
+
+elif not st.session_state.authenticated:
+    # --- AUTHENTICATION PAGE (Your existing Login UI) ---
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         logo_c, title_c = st.columns([0.2, 1])
@@ -339,86 +321,55 @@ if not st.session_state.authenticated:
                 # ... [Your Registration logic here] ...
                 pass
 else:
+    # --- FULL DASHBOARD VIEW (Your existing logic) ---
     # --- GLOBAL CSS INJECTION ---
     st.markdown("""
         <style>
-        /* Target the specific column container for Undo buttons */
-        div[data-testid="stVerticalBlock"] > div:has(button[key*="un_"]) {
-            gap: 0rem !important;
-        }
-
-        /* The Undo link styling */
+        div[data-testid="stVerticalBlock"] > div:has(button[key*="un_"]) { gap: 0rem !important; }
         button[key*="un_"] {
-            font-size: 11px !important;
-            padding: 0px !important;
-            height: 20px !important;
-            line-height: 1 !important;
-            color: #ff4b4b !important;
-            border: none !important;
-            background: transparent !important;
-            box-shadow: none !important;
-            margin-top: -15px !important;
-            text-align: left !important;
-            width: auto !important;
+            font-size: 11px !important; padding: 0px !important; height: 20px !important;
+            line-height: 1 !important; color: #ff4b4b !important; border: none !important;
+            background: transparent !important; box-shadow: none !important;
+            margin-top: -15px !important; text-align: left !important; width: auto !important;
         }
-
-        button[key*="un_"]:hover {
-            text-decoration: underline !important;
-            color: #ff3333 !important;
-            background: transparent !important;
-        }
-
-        /* Ensure the 'Already marked' tooltip/disabled button stays green */
+        button[key*="un_"]:hover { text-decoration: underline !important; color: #ff3333 !important; }
         button[disabled] {
-            border: 1px solid #28a745 !important;
-            color: #28a745 !important;
+            border: 1px solid #28a745 !important; color: #28a745 !important;
             background-color: rgba(40, 167, 69, 0.05) !important;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # 1. FETCH ALL DATA
+    # Fetch Data for Dashboard
     mission_data = get_data("User_Missions")
-    user_email = st.session_state.get('user_email', None)
+    user_name = st.session_state.get('user_name', 'Pilot')
+    user_email = st.session_state.get('user_email', 'unknown')
+    user_lvl = st.session_state.get('user_clearance', '1')
 
-    # 2. ROUTER: Decide between "Blog View" and "Full Dashboard View"
-    query_params = st.query_params
-    target_mission = query_params.get("mission_id")
+    st.markdown(f"""
+    <div style="background: linear-gradient(90deg, #0176D3 0%, #00A1E0 100%); padding: 40px; border-radius: 20px; color: white; margin-bottom: 20px;">
+        <h1 style="margin:0;">Welcome Back, {user_name}</h1>
+        <p style="opacity:0.9;">Status: <b>Level {user_lvl} Cadet</b> | Secure Connection: {user_email}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Header Area
+    h1, h2, h3 = st.columns([0.1, 1.3, 0.4])
+    with h1: st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=50)
+    with h2: st.title("🚀 ProjectAIML Launchpad")
+    with h3:
+        with st.popover(f"👤 {user_name}"):
+            if st.button("Secure Logout", use_container_width=True):
+                st.session_state.authenticated = False
+                st.rerun()
 
-    if target_mission:
-        # --- BLOG EMBED VIEW ---
-        # This shows ONLY the roadmap for the specific blog category
-        show_lms_roadmap(target_mission, user_email)
-        
-        if not st.session_state.authenticated:
-            st.info("👋 Log in via the Launchpad to track your progress!")
+    # Active Mission Prompt
+    user_state = mission_data[mission_data['Email'] == user_email]
+    if not user_state.empty and user_state['Status'].values[0] == "Active":
+        render_active_mission(user_state)
     else:
-        # --- FULL DASHBOARD VIEW (Your existing code) ---
-        user_name = st.session_state.get('user_name', 'Pilot')
-        user_lvl = st.session_state.get('user_clearance', '1')
+        st.info("💡 Select a mission from the navigator below to begin your flight plan.")
 
-        st.markdown(f"""
-        <div style="background: linear-gradient(90deg, #0176D3 0%, #00A1E0 100%); padding: 40px; border-radius: 20px; color: white; margin-bottom: 20px;">
-            <h1 style="margin:0;">Welcome Back, {user_name}</h1>
-            <p style="opacity:0.9;">Status: <b>Level {user_lvl} Cadet</b></p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # --- HEADER AREA ---
-        h1, h2, h3 = st.columns([0.1, 1.3, 0.4])
-        with h1: st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=50)
-        with h2: st.title("🚀 ProjectAIML Launchpad")
-        with h3:
-            with st.popover(f"👤 {user_name}"):
-                if st.button("Secure Logout", use_container_width=True):
-                    st.session_state.authenticated = False
-                    st.rerun()
-
-        user_state = mission_data[mission_data['Email'] == user_email]
-        if not user_state.empty and user_state['Status'].values[0] == "Active":
-            render_active_mission(user_state)
-        
-        st.divider()
-        render_dynamic_navigator(user_email)
-
+    st.divider()
+    render_dynamic_navigator(user_email)
     st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
