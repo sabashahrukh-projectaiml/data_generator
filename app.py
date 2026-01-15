@@ -162,6 +162,44 @@ def complete_current_node(email, current_node, mission_id, total_nodes=5):
     except Exception as e:
         st.error(f"Sync Error: {e}")
 
+def show_lms_roadmap(mission_id, email=None):
+    # Fetch Manifest (Uses your existing cache logic)
+    df = get_data("Mission_Manifest")
+    roadmap = df[df['Mission_ID'] == mission_id].sort_values('Order')
+
+    if not roadmap.empty:
+        st.subheader(f"🚀 Mission: {mission_id}")
+        
+        # Simple Progress Calculation
+        total = len(roadmap)
+        done = 0
+        if email:
+            # Check analytics for how many nodes in this mission are 'Blog_Read'
+            user_progress = get_data("Node_Analytics")
+            mission_nodes = roadmap['Node_ID'].astype(str).tolist()
+            done = user_progress[(user_progress['Email'] == email) & 
+                                 (user_progress['Node_ID'].isin(mission_nodes)) & 
+                                 (user_progress['Blog_Read'] == True)].shape[0]
+        
+        st.progress(done / total if total > 0 else 0)
+        st.write(f"Progress: {done}/{total} Lessons Complete")
+        st.divider()
+
+        for _, node in roadmap.iterrows():
+            c1, c2 = st.columns([1, 8])
+            # Check if this specific node is done
+            is_done = False
+            if email:
+                node_status = user_progress[(user_progress['Email'] == email) & (user_progress['Node_ID'] == str(node['Node_ID']))]
+                is_done = node_status['Blog_Read'].values[0] if not node_status.empty else False
+
+            c1.write("✅" if is_done else "⚪")
+            c2.markdown(f"**[{node['Node_Title']}]({node['URL']})**")
+            c2.caption(f"Lesson {node['Order']}")
+    else:
+        st.info("No roadmap found for this category.")
+
+
 # --- RENDER METHODS ---
 
 def render_active_mission(user_state):
@@ -201,7 +239,7 @@ def render_dynamic_navigator(email):
                 c1.markdown(f"""
                     <div style="margin-top: 5px;">
                         <a href="{node['URL']}" target="_blank" style="text-decoration: none; color: #00f2ff; font-weight: 600; display: flex; align-items: center; gap: 5px;">
-                            {node['Title']} <span style="font-size: 14px;">↗️</span>
+                            {node['Node_Title']} <span style="font-size: 14px;">↗️</span>
                         </a>
                     </div>
                 """, unsafe_allow_html=True)
@@ -245,6 +283,7 @@ def render_dynamic_navigator(email):
                         if st.button("❓ Quiz", key=f"q_{n_id}"):
                             update_granular_progress(email, m_id, n_id, "Quiz_Done", True)
                             st.rerun()
+
 
 # --- MAIN APP LOGIC ---
 
@@ -338,48 +377,48 @@ else:
         </style>
     """, unsafe_allow_html=True)
 
-    # 1. FETCH ALL DATA ONCE (This uses the cache)
+    # 1. FETCH ALL DATA
     mission_data = get_data("User_Missions")
-    manifest = get_data("Mission_Manifest")
-    analytics = get_data("Node_Analytics")
-    
-    # 2. RENDER THE QUANTUM HERO (Step 4)
-    user_name = st.session_state.get('user_name', 'Pilot')
-    user_email = st.session_state.get('user_email', 'unknown')
-    user_lvl = st.session_state.get('user_clearance', '1')
+    user_email = st.session_state.get('user_email', None)
 
-    st.markdown(f"""
-    <div style="background: linear-gradient(90deg, #0176D3 0%, #00A1E0 100%); padding: 40px; border-radius: 20px; color: white; margin-bottom: 20px;">
-        <h1 style="margin:0;">Welcome Back, {user_name}</h1>
-        <p style="opacity:0.9;">Status: <b>Level {user_lvl} Cadet</b> | Secure Connection: {user_email}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # --- HEADER AREA ---
-    h1, h2, h3 = st.columns([0.1, 1.3, 0.4])
-    with h1:
-        st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=50)
-    with h2:
-        st.title("🚀 ProjectAIML Launchpad")
-    with h3:
-        # Puts the profile button next to the title
-        with st.popover(f"👤 {user_name}"):
-            st.write(f"**Email:** {user_email}")
-            if st.button("Secure Logout", use_container_width=True):
-                st.session_state.authenticated = False
-                st.rerun()
+    # 2. ROUTER: Decide between "Blog View" and "Full Dashboard View"
+    query_params = st.query_params
+    target_mission = query_params.get("mission_id")
 
-    # --- ACTIVE MISSION PROMPT ---
-    user_state = mission_data[mission_data['Email'] == user_email]
-
-    if not user_state.empty and user_state['Status'].values[0] == "Active":
-        render_active_mission(user_state)
+    if target_mission:
+        # --- BLOG EMBED VIEW ---
+        # This shows ONLY the roadmap for the specific blog category
+        show_lms_roadmap(target_mission, user_email)
+        
+        if not st.session_state.authenticated:
+            st.info("👋 Log in via the Launchpad to track your progress!")
     else:
-        st.info("💡 Select a mission from the navigator below to begin your flight plan.")
+        # --- FULL DASHBOARD VIEW (Your existing code) ---
+        user_name = st.session_state.get('user_name', 'Pilot')
+        user_lvl = st.session_state.get('user_clearance', '1')
 
-    st.divider()
+        st.markdown(f"""
+        <div style="background: linear-gradient(90deg, #0176D3 0%, #00A1E0 100%); padding: 40px; border-radius: 20px; color: white; margin-bottom: 20px;">
+            <h1 style="margin:0;">Welcome Back, {user_name}</h1>
+            <p style="opacity:0.9;">Status: <b>Level {user_lvl} Cadet</b></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # --- HEADER AREA ---
+        h1, h2, h3 = st.columns([0.1, 1.3, 0.4])
+        with h1: st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=50)
+        with h2: st.title("🚀 ProjectAIML Launchpad")
+        with h3:
+            with st.popover(f"👤 {user_name}"):
+                if st.button("Secure Logout", use_container_width=True):
+                    st.session_state.authenticated = False
+                    st.rerun()
 
-    # --- MISSION NAVIGATOR ---
-    render_dynamic_navigator(user_email)
+        user_state = mission_data[mission_data['Email'] == user_email]
+        if not user_state.empty and user_state['Status'].values[0] == "Active":
+            render_active_mission(user_state)
+        
+        st.divider()
+        render_dynamic_navigator(user_email)
 
     st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
