@@ -282,7 +282,8 @@ target_mission = st.query_params.get("mission_id")
 if target_mission:
     # --- BLOG MODE ---
     # We show this immediately. No login wall. No redirects.
-    user_email = st.session_state.get('user_email', None)
+    #user_email = st.session_state.get('user_email', None)
+    user_email = st.query_params.get("pilot_token")
     show_lms_roadmap(target_mission, user_email)
     
     if not st.session_state.authenticated:
