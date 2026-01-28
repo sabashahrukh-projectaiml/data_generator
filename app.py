@@ -279,7 +279,6 @@ target_mission = query_params.get("mission_id")
 
 # 2. THE ROUTER
 if target_mission:
-    st.info("inside if target_mission") # Debug log
     # --- BLOG MODE: SHOW ROADMAP AND STOP ---
     handle_authentication() # Silent check
     user_email = st.session_state.get('user_email') or query_params.get("pilot_token")
@@ -295,13 +294,11 @@ if target_mission:
     st.stop() 
 
 # 3. DASHBOARD MODE: Only runs if target_mission IS NOT present
-elif not target_mission:
-    st.info("inside else part of if target_mission") # Debug log
+else:
     # Standard Authentication Check
     handle_authentication()
 
     if not st.session_state.authenticated:
-        st.info("line 304") #Debug log
         # --- LOGIN PAGE ---
         col1, col2, col3 = st.columns([1, 1.5, 1])
         with col2:
@@ -325,7 +322,6 @@ elif not target_mission:
                     st.error("Invalid Credentials")
     
     else:
-        st.info("line 328") #Debug log
         # --- FULL DASHBOARD VIEW (Your existing logic) ---
         # --- GLOBAL CSS INJECTION ---
         st.markdown("""
