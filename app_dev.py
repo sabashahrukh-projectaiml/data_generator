@@ -295,7 +295,7 @@ if target_mission:
     st.stop() 
 
 # 3. DASHBOARD MODE: Only runs if target_mission IS NOT present
-else:
+elif not target_mission:
     st.info("inside else part of if target_mission") # Debug log
     # Standard Authentication Check
     handle_authentication()
