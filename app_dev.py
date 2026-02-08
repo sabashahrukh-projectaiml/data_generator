@@ -2,57 +2,9 @@ import streamlit as st
 import pandas as pd
 from streamlit_gsheets import GSheetsConnection
 import hashlib
-from streamlit_local_storage import LocalStorage
 
-# Initialize Local Storage
-localS = LocalStorage()
-
-# --- DATABASE CONNECTION ---
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def get_data(worksheet_name):
-    df = conn.read(worksheet=worksheet_name, ttl=0)
-    
-    # If this is the progress sheet, fix the types immediately
-    if worksheet_name == "Node_Analytics":
-        for col in ['Blog_Read', 'Code_Done', 'Quiz_Done']:
-            if col in df.columns:
-                df[col] = df[col].astype(bool)
-    return df
-
-def handle_authentication():
-    query_params = st.query_params
-    url_token = query_params.get("pilot_token", "").lower()
-    
-    # 1. Check if we need to perform an auto-login from the URL
-    if url_token:
-        # Only trigger if not already logged in as this user
-        if not st.session_state.get('authenticated') or st.session_state.get('user_email') != url_token:
-            try:
-                registry = get_data("User_Registry") 
-                user_match = registry[registry['Email'].str.lower().str.strip() == url_token.strip()]
-                
-                if not user_match.empty:
-                    st.session_state.authenticated = True
-                    st.session_state.user_email = url_token
-                    st.session_state.user_name = user_match.iloc[0]['Full_Name']
-                    st.session_state.user_clearance = user_match.iloc[0]['Clearance']
-                    
-                    # IMPORTANT: We keep 'mission_id' if it exists, only clear the token
-                    current_mission = query_params.get("mission_id")
-                    st.query_params.clear() 
-                    if current_mission:
-                        st.query_params["mission_id"] = current_mission
-                    return True
-            except Exception as e:
-                return False
-
-    return st.session_state.get('authenticated', False)
-
-# --- EXECUTION ---
-is_logged_in = handle_authentication()
-
-# --- MISSION CONTROL INITIALIZATION ---
+# --- 1. INITIALIZATION & CONFIG ---
+# MUST be the first Streamlit command
 st.set_page_config(page_title="ProjectAIML Launchpad", page_icon="🚀", layout="wide")
 
 if 'authenticated' not in st.session_state:
@@ -61,64 +13,65 @@ if 'authenticated' not in st.session_state:
     st.session_state.user_name = ""
     st.session_state.user_clearance = 1
 
-# This function saves your "Quota" by remembering the data
-@st.cache_data(ttl=300)
+# --- 2. DATABASE CONNECTION ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- ARCHITECT'S UTILITIES ---
+@st.cache_data(ttl=300)
+def get_data(worksheet_name):
+    try:
+        df = conn.read(worksheet=worksheet_name, ttl=0)
+        if worksheet_name == "Node_Analytics":
+            bool_cols = ['Blog_Read', 'Code_Done', 'Quiz_Done']
+            for col in bool_cols:
+                if col in df.columns:
+                    # fillna(False) prevents NaN being treated as True
+                    df[col] = df[col].fillna(False).astype(bool)
+        return df
+    except Exception as e:
+        st.error(f"Error connecting to {worksheet_name}: {e}")
+        return pd.DataFrame()
+
+# --- 3. UTILITIES ---
 def hash_password(password):
     return hashlib.sha256(str.encode(password)).hexdigest()
 
 def get_cleaned_registry():
-    try:
-        registry = get_data("User_Registry")
+    registry = get_data("User_Registry")
+    if not registry.empty:
         if 'Clearance' in registry.columns:
             registry['Clearance'] = pd.to_numeric(registry['Clearance'], errors='coerce').fillna(1).astype(int)
         if 'Email' in registry.columns:
             registry['Email'] = registry['Email'].astype(str).str.lower().str.strip()
-        return registry
-    except Exception as e:
-        st.error(f"Registry Access Denied: {e}")
-        return pd.DataFrame()
+    return registry
 
-# --- MISSION LOGIC METHODS ---
-
+# --- 4. DATA SYNC LOGIC ---
 def update_granular_progress(email, mission_id, node_id, column_to_flip, value):
     try:
         all_progress = get_data("Node_Analytics")
-
-        bool_cols = ['Blog_Read', 'Code_Done', 'Quiz_Done']
-        for col in bool_cols:
-            if col in all_progress.columns:
-                # This converts numbers/NaNs into True/False so Pandas is happy
-                all_progress[col] = all_progress[col].astype(bool)
-        
         all_progress['Node_ID'] = all_progress['Node_ID'].astype(str)
+        
         mask = (all_progress['Email'] == email) & (all_progress['Node_ID'] == str(node_id))
         
         if mask.any():
             all_progress.loc[mask, column_to_flip] = value
-            
         else:
-            new_data = {"Email": email, "Mission_ID": mission_id, "Node_ID": str(node_id), 
-                        "Blog_Read": False, "Code_Done": False, "Quiz_Done": False}
-            new_data[column_to_flip] = value
-            all_progress = pd.concat([all_progress, pd.DataFrame([new_data])], ignore_index=True)
+            new_row = {
+                "Email": email, "Mission_ID": mission_id, "Node_ID": str(node_id), 
+                "Blog_Read": False, "Code_Done": False, "Quiz_Done": False
+            }
+            new_row[column_to_flip] = value
+            all_progress = pd.concat([all_progress, pd.DataFrame([new_row])], ignore_index=True)
         
         conn.update(worksheet="Node_Analytics", data=all_progress)
         st.cache_data.clear()
-        st.success(f"Synced {column_to_flip}!")
+        st.toast(f"✅ {column_to_flip} synced!", icon="🛰️")
+        st.rerun()
     except Exception as e:
-        st.error(f"Data Sync Error: {e}")
+        st.error(f"Sync Error: {e}")
 
 def reset_granular_progress(email, node_id, column_to_reset):
     try:
         all_progress = get_data("Node_Analytics")
-
-        cols_to_fix = ['Blog_Read', 'Code_Done', 'Quiz_Done']
-        for col in cols_to_fix:
-            if col in all_progress.columns:
-                all_progress[col] = all_progress[col].astype(bool)
-
         all_progress['Node_ID'] = all_progress['Node_ID'].astype(str)
         mask = (all_progress['Email'] == email) & (all_progress['Node_ID'] == str(node_id))
         
@@ -126,251 +79,131 @@ def reset_granular_progress(email, node_id, column_to_reset):
             all_progress.loc[mask, column_to_reset] = False
             conn.update(worksheet="Node_Analytics", data=all_progress)
             st.cache_data.clear()
-            st.toast(f"Reset {column_to_reset} status.", icon="🔄")
+            st.toast(f"Reset {column_to_reset}", icon="🔄")
+            st.rerun()
     except Exception as e:
         st.error(f"Reset Error: {e}")
 
-def complete_current_node(email, current_node, mission_id, total_nodes=5):
-    try:
-        all_missions = get_data("User_Missions")
-        mask = (all_missions['Email'] == email) & (all_missions['Mission_ID'] == mission_id)
-        if mask.any():
-            new_node = int(current_node) + 1
-            if new_node <= total_nodes:
-                all_missions.loc[mask, 'Current_Node'] = new_node
-                all_missions.loc[mask, 'Last_Update'] = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                all_missions.loc[mask, 'Status'] = "Completed"
-                st.balloons()
-            conn.update(worksheet="User_Missions", data=all_missions)
-            st.cache_data.clear()
-            st.rerun()
-    except Exception as e:
-        st.error(f"Sync Error: {e}")
-
-def show_lms_roadmap(mission_id, email=None):
-    # Fetch Manifest (Uses your existing cache logic)
-    df = get_data("Mission_Manifest")
-    roadmap = df[df['Mission_ID'] == mission_id].sort_values('Order')
-
-    if not roadmap.empty:
-        st.subheader(f"🚀 Mission: {mission_id}")
-        
-        # Simple Progress Calculation
-        total = len(roadmap)
-        done = 0
-        if email:
-            # Check analytics for how many nodes in this mission are 'Blog_Read'
-            user_progress = get_data("Node_Analytics")
-            mission_nodes = roadmap['Node_ID'].astype(str).tolist()
-            done = user_progress[(user_progress['Email'] == email) & 
-                                 (user_progress['Node_ID'].isin(mission_nodes)) & 
-                                 (user_progress['Blog_Read'] == True)].shape[0]
-        
-        st.progress(done / total if total > 0 else 0)
-        st.write(f"Progress: {done}/{total} Lessons Complete")
-        st.divider()
-
-        for _, node in roadmap.iterrows():
-            c1, c2 = st.columns([1, 8])
-            # Check if this specific node is done
-            is_done = False
-            if email:
-                node_status = user_progress[(user_progress['Email'] == email) & (user_progress['Node_ID'] == str(node['Node_ID']))]
-                is_done = node_status['Blog_Read'].values[0] if not node_status.empty else False
-
-            c1.write("✅" if is_done else "⚪")
-            c2.markdown(f"**[{node['Node_Title']}]({node['URL']})**")
-            c2.caption(f"Lesson {node['Order']}")
-    else:
-        st.info("No roadmap found for this category.")
-
-
-# --- RENDER METHODS ---
-
-def render_active_mission(user_state):
-    email = user_state['Email'].values[0]
-    m_id = user_state['Mission_ID'].values[0]
-    curr_node = int(user_state['Current_Node'].values[0])
-    
-    st.markdown(f"### 🛰️ Active Mission: {m_id}")
-    total_nodes = 5
-    st.progress(curr_node / total_nodes)
-    st.write(f"**Current Status:** Node {curr_node} of {total_nodes} Complete.")
-    
-    # Action Button
-    if st.button("✅ Mark Node as Complete & Sync Progress", use_container_width=True):
-        complete_current_node(email, curr_node, m_id, total_nodes)
-
+# --- 5. RENDER FUNCTIONS ---
 def render_dynamic_navigator(email):
+    """
+    Optimized renderer using a lookup dictionary to avoid repeated DF filtering.
+    """
     manifest = get_data("Mission_Manifest")
     analytics = get_data("Node_Analytics")
+    
+    if manifest.empty:
+        st.warning("Mission Manifest is empty.")
+        return
+
+    # PERFORMANCE BOOST: Create a lookup dictionary {(email, node_id): {status_dict}}
+    # This turns O(N^2) search into O(1) lookup
+    user_progress_map = (
+        analytics[analytics['Email'] == email]
+        .set_index('Node_ID')[['Blog_Read', 'Code_Done', 'Quiz_Done']]
+        .to_dict('index')
+    )
+
+    st.subheader("📂 Mission Navigator")
     missions = manifest['Mission_ID'].unique()
     
-    st.subheader("📂 Mission Navigator")
     for m_id in missions:
         with st.expander(f"🎯 Protocol: {m_id}"):
-            nodes = manifest[manifest['Mission_ID'] == m_id]
+            nodes = manifest[manifest['Mission_ID'] == m_id].sort_values('Order')
+            
             for _, node in nodes.iterrows():
-                n_id = node['Node_ID']
+                n_id = str(node['Node_ID'])
                 unique_key = f"{m_id}_{n_id}"
-
-                user_node_data = analytics[(analytics['Email'] == email) & (analytics['Node_ID'] == str(n_id))]
                 
-                has_read = user_node_data['Blog_Read'].values[0] if not user_node_data.empty else False
-                has_code = user_node_data['Code_Done'].values[0] if not user_node_data.empty else False
-                has_quiz = user_node_data['Quiz_Done'].values[0] if not user_node_data.empty else False
-
+                # Retrieve status from our pre-built map
+                status = user_progress_map.get(n_id, {"Blog_Read": False, "Code_Done": False, "Quiz_Done": False})
+                
                 c1, c2, c3, c4 = st.columns([0.5, 0.16, 0.16, 0.16])
+                
+                # Title Link
                 c1.markdown(f"""
                     <div style="margin-top: 5px;">
-                        <a href="{node['URL']}" target="_blank" style="text-decoration: none; color: #00f2ff; font-weight: 600; display: flex; align-items: center; gap: 5px;">
+                        <a href="{node['URL']}" target="_blank" style="text-decoration: none; color: #00f2ff; font-weight: 600;">
                             {node['Node_Title']} <span style="font-size: 14px;">↗️</span>
                         </a>
                     </div>
                 """, unsafe_allow_html=True)
                 
-                # --- READ BUTTON ---
-                with c2:
-                    if has_read:
-                        # Visual cue for completion: A green-bordered disabled button
-                        st.button("📖 Read", key=f"r_{unique_key}", disabled=True, help="Already marked as complete", type="secondary")
-                        #st.markdown('<style>div[data-testid="stButton"] button[disabled] { border: 2px solid #00FF00 !important; }</style>', unsafe_allow_html=True)
-                        if st.button("Undo", key=f"un_r_{unique_key}", type="tertiary", help="Click to reset this status"):
-                            reset_granular_progress(email, n_id, "Blog_Read")
-                            st.rerun()
-                    else:
-                        if st.button("📖 Read", key=f"r_{unique_key}"):
-                            update_granular_progress(email, m_id, n_id, "Blog_Read", True)
-                            st.rerun()
+                # Action Buttons Helper
+                actions = [
+                    ("📖 Read", "Blog_Read", "r_", "un_r_"),
+                    ("💻 Code", "Code_Done", "c_", "un_c_"),
+                    ("❓ Quiz", "Quiz_Done", "q_", "un_q_")
+                ]
+                
+                for label, col_name, btn_pfx, undo_pfx in actions:
+                    col_idx = {"Blog_Read": c2, "Code_Done": c3, "Quiz_Done": c4}[col_name]
+                    is_done = status.get(col_name, False)
+                    
+                    with col_idx:
+                        if is_done:
+                            st.button(label, key=f"{btn_pfx}{unique_key}", disabled=True)
+                            if st.button("Undo", key=f"{undo_pfx}{unique_key}", type="tertiary"):
+                                reset_granular_progress(email, n_id, col_name)
+                        else:
+                            if st.button(label, key=f"{btn_pfx}{unique_key}"):
+                                update_granular_progress(email, m_id, n_id, col_name, True)
 
-                # --- CODE BUTTON ---
-                with c3:
-                    if has_code:
-                        st.button("💻 Code", key=f"c_{unique_key}", disabled=True, help="Already marked as complete")
-                        #st.markdown('<style>div[data-testid="stButton"] button[disabled] { border: 2px solid #00FF00 !important; }</style>', unsafe_allow_html=True)
-                        if st.button("Undo", key=f"un_c_{unique_key}", type="tertiary", help="Click to reset this status"):
-                            reset_granular_progress(email, n_id, "Code_Done")
-                            st.rerun()
-                    else:
-                        if st.button("💻 Code", key=f"c_{unique_key}"):
-                            update_granular_progress(email, m_id, n_id, "Code_Done", True)
-                            st.rerun()
+# --- 6. AUTHENTICATION HANDLER ---
+def handle_authentication():
+    query_params = st.query_params
+    url_token = query_params.get("pilot_token", "").lower().strip()
+    
+    if url_token and (not st.session_state.authenticated or st.session_state.user_email != url_token):
+        registry = get_cleaned_registry()
+        user_match = registry[registry['Email'] == url_token]
+        
+        if not user_match.empty:
+            st.session_state.authenticated = True
+            st.session_state.user_email = url_token
+            st.session_state.user_name = user_match.iloc[0]['Full_Name']
+            st.session_state.user_clearance = user_match.iloc[0]['Clearance']
+            
+            # Clean URL but keep mission context
+            current_mission = query_params.get("mission_id")
+            st.query_params.clear()
+            if current_mission:
+                st.query_params["mission_id"] = current_mission
+            return True
+    return st.session_state.authenticated
 
-                # --- QUIZ BUTTON ---
-                with c4:
-                    if has_quiz:
-                        st.button("❓ Quiz", key=f"q_{unique_key}", disabled=True, help="Already marked as complete")
-                        #st.markdown('<style>div[data-testid="stButton"] button[disabled] { border: 2px solid #00FF00 !important; }</style>', unsafe_allow_html=True)
-                        if st.button("Undo", key=f"un_q_{unique_key}", type="tertiary", help="Click to reset this status"):
-                            reset_granular_progress(email, n_id, "Quiz_Done")
-                            st.rerun()
-                    else:
-                        if st.button("❓ Quiz", key=f"q_{n_id}"):
-                            update_granular_progress(email, m_id, n_id, "Quiz_Done", True)
-                            st.rerun()
+# --- 7. MAIN ROUTER ---
+is_logged_in = handle_authentication()
+target_mission = st.query_params.get("mission_id")
 
-# --- MAIN APP LOGIC ---
-# --- MAIN APP LOGIC ---
-
-# 1. Capture Context
-query_params = st.query_params
-target_mission = query_params.get("mission_id")
-
-# 2. THE ROUTER
 if target_mission:
-    # --- BLOG MODE: SHOW ROADMAP AND STOP ---
-    handle_authentication() # Silent check
-    user_email = st.session_state.get('user_email') or query_params.get("pilot_token")
-    
-    show_lms_roadmap(target_mission, user_email)
-    
-    if not st.session_state.authenticated:
-        st.info("👋 Log in to your Launchpad to track flight progress.")
-    
-    st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
-    
-    # Force the script to finish here
-    st.stop() 
+    # --- BLOG MODE ---
+    # (Optional: Add show_lms_roadmap function here if needed)
+    st.title(f"Mission: {target_mission}")
+    if not is_logged_in:
+        st.info("👋 Please log in to track your progress.")
+    st.stop()
 
-# 3. DASHBOARD MODE: Only runs if target_mission IS NOT present
 else:
-    # Standard Authentication Check
-    handle_authentication()
-
+    # --- DASHBOARD MODE ---
     if not st.session_state.authenticated:
-        # --- LOGIN PAGE ---
+        # Render Login UI
         col1, col2, col3 = st.columns([1, 1.5, 1])
         with col2:
-            st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=60)
             st.title("Pilot Authorization")
-            
-            auth_mode = st.radio("Access Level", ["Login", "Register"], horizontal=True)
             input_email = st.text_input("Email").strip().lower()
             input_pass = st.text_input("Password", type='password')
-            
-            if st.button("Authorize Entry", type="primary", use_container_width=True):
-                registry = get_cleaned_registry()
-                user_row = registry[registry['Email'] == input_email]
-                if not user_row.empty and hash_password(input_pass) == user_row.iloc[0]['Password_Hash']:
+            if st.button("Authorize", type="primary", use_container_width=True):
+                reg = get_cleaned_registry()
+                user = reg[reg['Email'] == input_email]
+                if not user.empty and hash_password(input_pass) == user.iloc[0]['Password_Hash']:
                     st.session_state.authenticated = True
                     st.session_state.user_email = input_email
-                    st.session_state.user_name = user_row.iloc[0]['Full_Name']
-                    st.session_state.user_clearance = user_row.iloc[0]['Clearance']
+                    st.session_state.user_name = user.iloc[0]['Full_Name']
                     st.rerun()
                 else:
                     st.error("Invalid Credentials")
-    
     else:
-        # --- FULL DASHBOARD VIEW (Your existing logic) ---
-        # --- GLOBAL CSS INJECTION ---
-        st.markdown("""
-            <style>
-            div[data-testid="stVerticalBlock"] > div:has(button[key*="un_"]) { gap: 0rem !important; }
-            button[key*="un_"] {
-                font-size: 11px !important; padding: 0px !important; height: 20px !important;
-                line-height: 1 !important; color: #ff4b4b !important; border: none !important;
-                background: transparent !important; box-shadow: none !important;
-                margin-top: -15px !important; text-align: left !important; width: auto !important;
-            }
-            button[key*="un_"]:hover { text-decoration: underline !important; color: #ff3333 !important; }
-            button[disabled] {
-                border: 1px solid #28a745 !important; color: #28a745 !important;
-                background-color: rgba(40, 167, 69, 0.05) !important;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Fetch Data for Dashboard
-        mission_data = get_data("User_Missions")
-        user_name = st.session_state.get('user_name', 'Pilot')
-        user_email = st.session_state.get('user_email', 'unknown')
-        user_lvl = st.session_state.get('user_clearance', '1')
-
-        st.markdown(f"""
-        <div style="background: linear-gradient(90deg, #0176D3 0%, #00A1E0 100%); padding: 40px; border-radius: 20px; color: white; margin-bottom: 20px;">
-            <h1 style="margin:0;">Welcome Back, {user_name}</h1>
-            <p style="opacity:0.9;">Status: <b>Level {user_lvl} Cadet</b> | Secure Connection: {user_email}</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Header Area
-        h1, h2, h3 = st.columns([0.1, 1.3, 0.4])
-        with h1: st.image("https://projectaiml.com/wp-content/uploads/2025/05/Gemini_Generated_Image_mg3y4pmg3y4pmg3y.jpg", width=50)
-        with h2: st.title("🚀 ProjectAIML Launchpad")
-        with h3:
-            with st.popover(f"👤 {user_name}"):
-                if st.button("Secure Logout", use_container_width=True):
-                    st.session_state.authenticated = False
-                    st.rerun()
-
-        # Active Mission Prompt
-        user_state = mission_data[mission_data['Email'] == user_email]
-        if not user_state.empty and user_state['Status'].values[0] == "Active":
-            render_active_mission(user_state)
-        else:
-            st.info("💡 Select a mission from the navigator below to begin your flight plan.")
-
-        st.divider()
-        render_dynamic_navigator(user_email)
-        st.caption("© 2026 ProjectAIML | Mission Control v1.0.4")
+        # Full Dashboard
+        st.markdown(f"## Welcome Back, {st.session_state.user_name}")
+        render_dynamic_navigator(st.session_state.user_email)
